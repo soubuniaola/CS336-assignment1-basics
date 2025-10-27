@@ -1,3 +1,5 @@
+import pickle
+
 import regex as re
 import os
 import multiprocessing as mp
@@ -42,7 +44,12 @@ def BPE_trainer(
 
         #apply the merge (update pre_token and pair_counter)
         pre_tokens, pair_counter = apply_merge(pre_tokens, pair_counter, best_merge)
-    print(merges)
+
+    #save to disk
+    with open("./tokenizer/TS_vocab.pkl", "wb") as f:
+        pickle.dump(vocab, f)
+    with open("./tokenizer/TS_merges.pkl", "wb") as f:
+        pickle.dump(merges, f)
     return vocab, merges
 
 def apply_merge(pre_tokens, pair_counter, best_merge):
@@ -195,6 +202,6 @@ def pre_tokenize_all(
 
 if __name__ == "__main__":
     BPE_trainer(
-        "../data/TinyStoriesV2-GPT4-valid.txt",
+        "../data/TinyStoriesV2-GPT4-train.txt",
         10000,
         ["<|endoftext|>"],)
