@@ -9,9 +9,15 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
+from cs336_basics import functional_utils
 from cs336_basics.BPE_trainer import BPE_trainer
 from cs336_basics.bpe_tokenizer import BPETokenizer
+from cs336_basics.causal_mheads_self_attention import CausalMHA
+from cs336_basics.embedding_module import Embedding
 from cs336_basics.linear_module import Linear
+from cs336_basics.rmsnorm_module import RMSNorm
+from cs336_basics.rope import Rope
+from cs336_basics.swiglu import SwiGlu
 
 
 def run_linear(
@@ -58,8 +64,11 @@ def run_embedding(
     Returns:
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
-
-    raise NotImplementedError
+    embeddings = Embedding(vocab_size, d_model)
+    weights_dict = {"weights": weights}
+    embeddings.load_state_dict(weights_dict)
+    tensor_out = embeddings.forward(token_ids)
+    return tensor_out
 
 
 def run_swiglu(
@@ -91,8 +100,11 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
-
+    swiglu = SwiGlu(d_model, d_ff)
+    weights = {"w1_weight": w1_weight, "w2_weight": w2_weight, "w3_weight": w3_weight}
+    swiglu.load_state_dict(weights)
+    tensor_out = swiglu.forward(in_features)
+    return tensor_out
 
 def run_scaled_dot_product_attention(
     Q: Float[Tensor, " ... queries d_k"],
@@ -112,7 +124,8 @@ def run_scaled_dot_product_attention(
     Returns:
         Float[Tensor, " ... queries d_v"]: Output of SDPA
     """
-    raise NotImplementedError
+    attention = functional_utils.scaled_dot_product_attention(Q, K, V, mask=mask)
+    return attention
 
 
 def run_multihead_self_attention(
@@ -146,7 +159,11 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    causal_mha = CausalMHA(d_model, num_heads)
+    weighs_dict = {"q_proj": q_proj_weight, "k_proj": k_proj_weight, "v_proj": v_proj_weight, "o_proj": o_proj_weight}
+    causal_mha.load_state_dict(weighs_dict)
+    mha = causal_mha.forward(in_features)
+    return mha
 
 
 def run_multihead_self_attention_with_rope(
@@ -186,7 +203,13 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    rope = Rope(theta, max_seq_len=max_seq_len, d_k=d_model//num_heads)
+    rope.token_position = token_positions
+    causal_mha = CausalMHA(d_model, num_heads, rope=rope)
+    weighs_dict = {"q_proj": q_proj_weight, "k_proj": k_proj_weight, "v_proj": v_proj_weight, "o_proj": o_proj_weight}
+    causal_mha.load_state_dict(weighs_dict)
+    mha = causal_mha.forward(in_features)
+    return mha
 
 
 def run_rope(
@@ -208,7 +231,9 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    raise NotImplementedError
+    rope = Rope(theta, max_seq_len, d_k)
+    rot_in = rope.forward(in_query_or_key, token_positions)
+    return rot_in
 
 
 def run_transformer_block(
@@ -308,7 +333,7 @@ def run_transformer_lm(
         num_heads (int): Number of heads to use in multi-headed attention. `d_model` must be
             evenly divisible by `num_heads`.
         d_ff (int): Dimensionality of the feed-forward inner layer (section 3.3).
-        rope_theta (float): The RoPE $\Theta$ parameter.
+        rope_theta (float): The RoPE $Theta$ parameter.
         weights (dict[str, Tensor]):
             State dict of our reference implementation. {num_layers} refers to an
             integer between `0` and `num_layers - 1` (the layer index).
@@ -386,7 +411,12 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
-    raise NotImplementedError
+    rmsnorm = RMSNorm(d_model,eps)
+    gamma = {'gamma': weights}
+    rmsnorm.load_state_dict(gamma)
+    tensor_out = rmsnorm.forward(in_features)
+    return tensor_out
+
 
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
@@ -400,7 +430,8 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
-    raise NotImplementedError
+    tensor_out = functional_utils.silu(in_features)
+    return tensor_out
 
 
 def run_get_batch(
@@ -439,6 +470,8 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         Float[Tensor, "..."]: Tensor of with the same shape as `in_features` with the output of
         softmax normalizing the specified `dim`.
     """
+    probs = functional_utils.softmax(in_features, dim)
+    return probs
     raise NotImplementedError
 
 

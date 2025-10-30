@@ -3,9 +3,8 @@ import torch
 from torch import nn
 from einops import rearrange, einsum
 
-
 class Linear(nn.Module):
-    def __init__(self, in_features, out_features,  device = None, dtype = None):
+    def __init__(self, in_features, out_features, device = None, dtype = None):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
