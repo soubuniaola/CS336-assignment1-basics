@@ -9,8 +9,9 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
-from cs336_basics import functional_utils
+from cs336_basics import function_utils
 from cs336_basics.BPE_trainer import BPE_trainer
+from cs336_basics.basic_transformer_lm import BasicTransformerLM
 from cs336_basics.bpe_tokenizer import BPETokenizer
 from cs336_basics.causal_mheads_self_attention import CausalMHA
 from cs336_basics.embedding_module import Embedding
@@ -18,6 +19,7 @@ from cs336_basics.linear_module import Linear
 from cs336_basics.rmsnorm_module import RMSNorm
 from cs336_basics.rope import Rope
 from cs336_basics.swiglu import SwiGlu
+from cs336_basics.transformer_block import TransformerBlock
 
 
 def run_linear(
@@ -27,19 +29,19 @@ def run_linear(
     in_features: Float[Tensor, " ... d_in"],
 ) -> Float[Tensor, " ... d_out"]:
     """
-    Given the weights of a Linear layer, compute the transformation of a batched input.
+    Given the weight of a Linear layer, compute the transformation of a batched input.
 
     Args:
         in_dim (int): The size of the input dimension
         out_dim (int): The size of the output dimension
-        weights (Float[Tensor, "d_out d_in"]): The linear weights to use
+        weights (Float[Tensor, "d_out d_in"]): The linear weight to use
         in_features (Float[Tensor, "... d_in"]): The output tensor to apply the function to
 
     Returns:
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
     linear = Linear(d_in, d_out)
-    weights_dict = {"weights": weights}
+    weights_dict = {"weight": weights}
     linear.load_state_dict(weights_dict)
     tensor_out = linear.forward(in_features)
     return tensor_out
@@ -53,7 +55,7 @@ def run_embedding(
     token_ids: Int[Tensor, " ..."],
 ) -> Float[Tensor, " ... d_model"]:
     """
-    Given the weights of an Embedding layer, get the embeddings for a batch of token ids.
+    Given the weight of an Embedding layer, get the embeddings for a batch of token ids.
 
     Args:
         vocab_size (int): The number of embeddings in the vocabulary
@@ -65,7 +67,7 @@ def run_embedding(
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
     embeddings = Embedding(vocab_size, d_model)
-    weights_dict = {"weights": weights}
+    weights_dict = {"weight": weights}
     embeddings.load_state_dict(weights_dict)
     tensor_out = embeddings.forward(token_ids)
     return tensor_out
@@ -79,15 +81,15 @@ def run_swiglu(
     w3_weight: Float[Tensor, " d_ff d_model"],
     in_features: Float[Tensor, " ... d_model"],
 ) -> Float[Tensor, " ... d_model"]:
-    """Given the weights of a SwiGLU network, return
-    the output of your implementation with these weights.
+    """Given the weight of a SwiGLU network, return
+    the output of your implementation with these weight.
 
     Args:
         d_model (int): Dimensionality of the feedforward input and output.
         d_ff (int): Dimensionality of the up-project happening internally to your swiglu.
-        w1_weight (Float[Tensor, "d_ff d_model"]): Stored weights for W1
-        w2_weight (Float[Tensor, "d_model d_ff"]): Stored weights for W2
-        w3_weight (Float[Tensor, "d_ff d_model"]): Stored weights for W3
+        w1_weight (Float[Tensor, "d_ff d_model"]): Stored weight for W1
+        w2_weight (Float[Tensor, "d_model d_ff"]): Stored weight for W2
+        w3_weight (Float[Tensor, "d_ff d_model"]): Stored weight for W3
         in_features (Float[Tensor, "... d_model"]): Input embeddings to the feed-forward layer.
 
     Returns:
@@ -95,8 +97,8 @@ def run_swiglu(
     """
     # Example:
     # If your state dict keys match, you can use `load_state_dict()`
-    # swiglu.load_state_dict(weights)
-    # You can also manually assign the weights
+    # swiglu.load_state_dict(weight)
+    # You can also manually assign the weight
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
@@ -138,7 +140,7 @@ def run_multihead_self_attention(
     in_features: Float[Tensor, " ... sequence_length d_in"],
 ) -> Float[Tensor, " ... sequence_length d_out"]:
     """
-    Given the key, query, and value projection weights of a naive unbatched
+    Given the key, query, and value projection weight of a naive unbatched
     implementation of multi-head attention, return the output of an optimized batched
     implementation. This implementation should handle the key, query, and value projections
     for all heads in a single matrix multiply.
@@ -157,10 +159,15 @@ def run_multihead_self_attention(
 
     Returns:
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
-        implementation with the given QKV projection weights and input features.
+        implementation with the given QKV projection weight and input features.
     """
     causal_mha = CausalMHA(d_model, num_heads)
-    weighs_dict = {"q_proj": q_proj_weight, "k_proj": k_proj_weight, "v_proj": v_proj_weight, "o_proj": o_proj_weight}
+    weighs_dict = {
+        "q_proj.weight": q_proj_weight,
+        "k_proj.weight": k_proj_weight,
+        "v_proj.weight": v_proj_weight,
+        "output_proj.weight": o_proj_weight
+    }
     causal_mha.load_state_dict(weighs_dict)
     mha = causal_mha.forward(in_features)
     return mha
@@ -179,7 +186,7 @@ def run_multihead_self_attention_with_rope(
     token_positions: Int[Tensor, " ... sequence_length"] | None = None,
 ) -> Float[Tensor, " ... sequence_length d_out"]:
     """
-    Given the key, query, and value projection weights of a naive unbatched
+    Given the key, query, and value projection weight of a naive unbatched
     implementation of multi-head attention, return the output of an optimized batched
     implementation. This implementation should handle the key, query, and value projections
     for all heads in a single matrix multiply.
@@ -201,14 +208,19 @@ def run_multihead_self_attention_with_rope(
 
     Returns:
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
-        implementation with the given QKV projection weights and input features.
+        implementation with the given QKV projection weight and input features.
     """
-    rope = Rope(theta, max_seq_len=max_seq_len, d_k=d_model//num_heads)
+    rope = Rope(theta, max_seq_len=max_seq_len, dim=d_model // num_heads)
     rope.token_position = token_positions
     causal_mha = CausalMHA(d_model, num_heads, rope=rope)
-    weighs_dict = {"q_proj": q_proj_weight, "k_proj": k_proj_weight, "v_proj": v_proj_weight, "o_proj": o_proj_weight}
+    weighs_dict = {
+        "q_proj.weight": q_proj_weight,
+        "k_proj.weight": k_proj_weight,
+        "v_proj.weight": v_proj_weight,
+        "output_proj.weight": o_proj_weight
+    }
     causal_mha.load_state_dict(weighs_dict)
-    mha = causal_mha.forward(in_features)
+    mha = causal_mha(in_features)
     return mha
 
 
@@ -246,7 +258,7 @@ def run_transformer_block(
     in_features: Float[Tensor, " batch sequence_length d_model"],
 ) -> Float[Tensor, " batch sequence_length d_model"]:
     """
-    Given the weights of a pre-norm Transformer block and input features,
+    Given the weight of a pre-norm Transformer block and input features,
     return the output of running the Transformer block on the input features.
 
     This function should use RoPE.
@@ -306,7 +318,13 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    rope = Rope(theta, max_seq_len, d_model//num_heads)
+    transformer_block = TransformerBlock(d_model, num_heads, d_ff, rope)
+
+    transformer_block.load_state_dict(weights)
+    tb_out = transformer_block.forward(in_features)
+    return tb_out
+
 
 
 def run_transformer_lm(
@@ -320,7 +338,7 @@ def run_transformer_lm(
     weights: dict[str, Tensor],
     in_indices: Int[Tensor, " batch_size sequence_length"],
 ) -> Float[Tensor, " batch_size sequence_length vocab_size"]:
-    """Given the weights of a Transformer language model and input indices,
+    """Given the weight of a Transformer language model and input indices,
     return the output of running a forward pass on the input indices.
 
     This function should use RoPE.
@@ -388,7 +406,17 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    transformer = BasicTransformerLM(
+        vocab_size=vocab_size,
+        context_length=context_length,
+        d_model=d_model,
+        num_heads=num_heads,
+        num_layers=num_layers,
+        d_ff=d_ff,
+        rope_theta=rope_theta,
+    )
+    transformer.load_state_dict(weights)
+    return transformer.forward(in_indices)
 
 
 def run_rmsnorm(
@@ -397,13 +425,13 @@ def run_rmsnorm(
     weights: Float[Tensor, " d_model"],
     in_features: Float[Tensor, " ... d_model"],
 ) -> Float[Tensor, " ... d_model"]:
-    """Given the weights of a RMSNorm affine transform,
+    """Given the weight of a RMSNorm affine transform,
     return the output of running RMSNorm on the input features.
 
     Args:
         d_model (int): The dimensionality of the RMSNorm input.
         eps: (float): A value added to the denominator for numerical stability.
-        weights (Float[Tensor, "d_model"]): RMSNorm weights.
+        weights (Float[Tensor, "d_model"]): RMSNorm weight.
         in_features (Float[Tensor, "... d_model"]): Input features to run RMSNorm on. Can have arbitrary leading
             dimensions.
 
@@ -412,7 +440,7 @@ def run_rmsnorm(
         RMSNorm of the `in_features`.
     """
     rmsnorm = RMSNorm(d_model,eps)
-    gamma = {'gamma': weights}
+    gamma = {'weight': weights}
     rmsnorm.load_state_dict(gamma)
     tensor_out = rmsnorm.forward(in_features)
     return tensor_out

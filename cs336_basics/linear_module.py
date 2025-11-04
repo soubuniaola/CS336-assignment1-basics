@@ -8,11 +8,11 @@ class Linear(nn.Module):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
-        self.weights = nn.Parameter(torch.Tensor(out_features, in_features))
+        self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
 
         std = math.sqrt(2.0 / in_features + out_features)
-        nn.init.trunc_normal_(self.weights, mean=0, std=std, a=-3*std, b=3*std)
+        nn.init.trunc_normal_(self.weight, mean=0, std=std, a=-3 * std, b=3 * std)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        Y = einsum(x, self.weights, "... d_in, d_out d_in -> ... d_out")
+        Y = einsum(x, self.weight, "... d_in, d_out d_in -> ... d_out")
         return Y
