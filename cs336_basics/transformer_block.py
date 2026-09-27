@@ -1,8 +1,8 @@
 import torch
 from torch import nn
 
-from cs336_basics.causal_mheads_self_attention import CausalMHA
-from cs336_basics.rmsnorm_module import RMSNorm
+from cs336_basics.causal_multi_head_self_attention import CausalMHA
+from cs336_basics.rmsnorm import RMSNorm
 from cs336_basics.rope import Rope
 from cs336_basics.swiglu import SwiGlu
 

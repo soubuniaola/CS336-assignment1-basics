@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable
-from typing import IO, Any, BinaryIO
+from typing import IO, Any, BinaryIO, Optional
 
 import numpy.typing as npt
 import torch
@@ -10,13 +10,17 @@ from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
 from cs336_basics import function_utils
-from cs336_basics.BPE_trainer import BPE_trainer
+from cs336_basics.BPE_trainer import bpe_trainer
 from cs336_basics.basic_transformer_lm import BasicTransformerLM
 from cs336_basics.bpe_tokenizer import BPETokenizer
-from cs336_basics.causal_mheads_self_attention import CausalMHA
-from cs336_basics.embedding_module import Embedding
-from cs336_basics.linear_module import Linear
-from cs336_basics.rmsnorm_module import RMSNorm
+from cs336_basics.causal_multi_head_self_attention import CausalMHA
+from cs336_basics.checkpointing import save_checkpoint, load_checkpoint
+from cs336_basics.data import get_batch
+from cs336_basics.embedding import Embedding
+from cs336_basics.function_utils import clip_gradient
+from cs336_basics.linear import Linear
+from cs336_basics.optimizer import AdamW, cos_lr
+from cs336_basics.rmsnorm import RMSNorm
 from cs336_basics.rope import Rope
 from cs336_basics.swiglu import SwiGlu
 from cs336_basics.transformer_block import TransformerBlock
@@ -32,8 +36,8 @@ def run_linear(
     Given the weight of a Linear layer, compute the transformation of a batched input.
 
     Args:
-        in_dim (int): The size of the input dimension
-        out_dim (int): The size of the output dimension
+        d_in (int): The size of the input dimension
+        d_out (int): The size of the output dimension
         weights (Float[Tensor, "d_out d_in"]): The linear weight to use
         in_features (Float[Tensor, "... d_in"]): The output tensor to apply the function to
 
@@ -112,7 +116,7 @@ def run_scaled_dot_product_attention(
     Q: Float[Tensor, " ... queries d_k"],
     K: Float[Tensor, " ... keys d_k"],
     V: Float[Tensor, " ... values d_v"],
-    mask: Bool[Tensor, " ... queries keys"] | None = None,
+    mask: Optional[Bool[Tensor, " ... queries keys"]],
 ) -> Float[Tensor, " ... queries d_v"]:
     """
     Given key (K), query (Q), and value (V) tensors, return
@@ -126,7 +130,7 @@ def run_scaled_dot_product_attention(
     Returns:
         Float[Tensor, " ... queries d_v"]: Output of SDPA
     """
-    attention = functional_utils.scaled_dot_product_attention(Q, K, V, mask=mask)
+    attention = function_utils.scaled_dot_product_attention(Q, K, V, mask=mask)
     return attention
 
 
@@ -150,7 +154,7 @@ def run_multihead_self_attention(
     Args:
         d_model (int): Dimensionality of the feedforward input and output.
         num_heads (int): Number of heads to use in multi-headed attention.
-        max_seq_len (int): Maximum sequence length to pre-cache if your implementation does that.
+        # max_seq_len (int): Maximum sequence length to pre-cache if your implementation does that.
         q_proj_weight (Float[Tensor, "d_k d_in"]): Weights for the Q projection
         k_proj_weight (Float[Tensor, "d_k d_in"]): Weights for the K projection
         v_proj_weight (Float[Tensor, "d_k d_in"]): Weights for the V projection
@@ -183,7 +187,7 @@ def run_multihead_self_attention_with_rope(
     v_proj_weight: Float[Tensor, " d_v d_in"],
     o_proj_weight: Float[Tensor, " d_model d_v"],
     in_features: Float[Tensor, " ... sequence_length d_in"],
-    token_positions: Int[Tensor, " ... sequence_length"] | None = None,
+    token_positions: Optional[Int[Tensor, " ... sequence_length"]],
 ) -> Float[Tensor, " ... sequence_length d_out"]:
     """
     Given the key, query, and value projection weight of a naive unbatched
@@ -416,6 +420,8 @@ def run_transformer_lm(
         rope_theta=rope_theta,
     )
     transformer.load_state_dict(weights)
+    generated = transformer.generate(in_indices[0])
+    print(generated)
     return transformer.forward(in_indices)
 
 
@@ -458,7 +464,7 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
-    tensor_out = functional_utils.silu(in_features)
+    tensor_out = function_utils.silu(in_features)
     return tensor_out
 
 
@@ -482,7 +488,7 @@ def run_get_batch(
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
     """
-    raise NotImplementedError
+    return get_batch(dataset, batch_size, context_length, device)
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
@@ -498,10 +504,8 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         Float[Tensor, "..."]: Tensor of with the same shape as `in_features` with the output of
         softmax normalizing the specified `dim`.
     """
-    probs = functional_utils.softmax(in_features, dim)
+    probs = function_utils.softmax(in_features, dim)
     return probs
-    raise NotImplementedError
-
 
 def run_cross_entropy(
     inputs: Float[Tensor, " batch_size vocab_size"], targets: Int[Tensor, " batch_size"]
@@ -518,7 +522,7 @@ def run_cross_entropy(
     Returns:
         Float[Tensor, ""]: The average cross-entropy loss across examples.
     """
-    raise NotImplementedError
+    return function_utils.cross_entropy(inputs, targets)
 
 
 def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
@@ -530,14 +534,14 @@ def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm:
 
     The gradients of the parameters (parameter.grad) should be modified in-place.
     """
-    raise NotImplementedError
+    clip_gradient(parameters, max_l2_norm)
 
 
 def get_adamw_cls() -> Any:
     """
     Returns a torch.optim.Optimizer that implements AdamW.
     """
-    raise NotImplementedError
+    return AdamW
 
 
 def run_get_lr_cosine_schedule(
@@ -565,8 +569,7 @@ def run_get_lr_cosine_schedule(
     Returns:
         Learning rate at the given iteration under the specified schedule.
     """
-    raise NotImplementedError
-
+    return cos_lr(it,min_learning_rate,max_learning_rate,warmup_iters,cosine_cycle_iters)
 
 def run_save_checkpoint(
     model: torch.nn.Module,
@@ -584,7 +587,7 @@ def run_save_checkpoint(
             we've completed.
         out (str | os.PathLike | BinaryIO | IO[bytes]): Path or file-like object to serialize the model, optimizer, and iteration to.
     """
-    raise NotImplementedError
+    save_checkpoint(model, optimizer, iteration, out)
 
 
 def run_load_checkpoint(
@@ -605,7 +608,7 @@ def run_load_checkpoint(
     Returns:
         int: the previously-serialized number of iterations.
     """
-    raise NotImplementedError
+    return load_checkpoint(src, model, optimizer)
 
 
 def get_tokenizer(
@@ -659,5 +662,5 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    vocab, merges = BPE_trainer(input_path,vocab_size,special_tokens)
+    vocab, merges = bpe_trainer(input_path, vocab_size, special_tokens)
     return vocab, merges

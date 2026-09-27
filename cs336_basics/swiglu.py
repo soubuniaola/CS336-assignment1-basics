@@ -1,10 +1,8 @@
-import torch
 from torch import nn, Tensor
 from jaxtyping import Float
-from einops import einsum
 
 from cs336_basics import function_utils
-from cs336_basics.linear_module import Linear
+from cs336_basics.linear import Linear
 
 
 class SwiGlu(nn.Module):
@@ -20,4 +18,4 @@ class SwiGlu(nn.Module):
         self.w3 = Linear(d_model,d_ff)
 
     def forward(self, x: Float[Tensor, "..."]) -> Float[Tensor, "..."]:
-        return self.w2(functional_utils.silu(self.w1(x)) * self.w3(x))
+        return self.w2(function_utils.silu(self.w1(x)) * self.w3(x))

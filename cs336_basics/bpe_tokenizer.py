@@ -70,6 +70,3 @@ class BPETokenizer:
         return decoded.decode("utf-8","replace")
 
 
-if __name__ == "__main__":
-    btok = BPETokenizer.from_files("./tokenizer/vocab.pkl", "./tokenizer/merges.pkl",special_tokens=["<|endoftext|>"])
-    encoded = btok.encode("hello, this is zehan's <|endoftext|> debugging phase <|endoftext|><|endoftext|>")

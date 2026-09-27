@@ -7,7 +7,7 @@ import time
 from collections import defaultdict, Counter
 from typing import BinaryIO
 
-def BPE_trainer(
+def bpe_trainer(
     input_path: str,
     vocab_size: int,
     special_tokens: list[str],
@@ -199,9 +199,3 @@ def pre_tokenize_all(
             assert b"<|" not in key, "Pre-tokenization error"
             global_pretoken[key] += value
     return global_pretoken
-
-if __name__ == "__main__":
-    BPE_trainer(
-        "../data/TinyStoriesV2-GPT4-train.txt",
-        10000,
-        ["<|endoftext|>"],)

@@ -1,9 +1,12 @@
-from torch import nn
+from typing import Optional
 
-from cs336_basics import rope
-from cs336_basics.embedding_module import Embedding
-from cs336_basics.linear_module import Linear
-from cs336_basics.rmsnorm_module import RMSNorm
+import torch
+from torch import nn
+from einops import rearrange, repeat
+from cs336_basics.embedding import Embedding
+from cs336_basics.function_utils import softmax
+from cs336_basics.linear import Linear
+from cs336_basics.rmsnorm import RMSNorm
 from cs336_basics.rope import Rope
 from cs336_basics.transformer_block import TransformerBlock
 from torch import Tensor
@@ -104,4 +107,60 @@ class BasicTransformerLM(nn.Module):
         x = self.lm_head(x)
 
         return x
+
+    @torch.no_grad()
+    def generate(
+        self,
+        x: torch.Tensor,
+        max_new_tokens: int = 50,
+        top_p: float = 0.9,
+        temperature: float = 1.0,
+        eos_id: int | None = None,
+    ):
+        if x.dim() == 1:
+            x = x.unsqueeze(0)
+
+        generated = torch.empty([1,1])
+        origin_seq_len = x.size(-1)
+        for _ in range(max_new_tokens):
+            # only get the last context_length tokens if length of x
+            # exceeds the model's context_length
+            x = x[:, -self.context_length:] if x.size(1) > self.context_length else x
+
+            # get the next token's logits (..., seq_len, vocab_size)
+            logits = self(x)
+            next_token_logits = logits[:, -1]
+            assert next_token_logits.size() == (x.size(0), self.vocab_size), "token shape: {}".format(logits.size())
+
+
+            # apply temperature scaling
+            temperature_scaled_logits = next_token_logits / temperature
+            temperature_scaled_probs = softmax(temperature_scaled_logits, dimension=-1)
+
+            # apply top-p sampling
+            sorted_probs, sorted_indices = torch.sort(temperature_scaled_probs, descending=True)
+            cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+
+            # mask out tokens with cumulative prob > top_p
+            mask = cumulative_probs > top_p
+
+            # ensure at least one token is preserved
+            mask[...,1:] = mask[...,:-1].clone()
+            mask[...,0] = False
+
+            # fancy indexing
+            sorted_probs = sorted_probs[mask]
+            sorted_probs = sorted_probs / sorted_probs.sum(dim=-1, keepdim=True)
+
+            # get the next token id
+            next_token = torch.multinomial(sorted_probs, 1).unsqueeze(-1)
+            next_token = sorted_indices.gather(-1, next_token)
+
+            if eos_id is not None and next_token.item() == eos_id:
+                break
+            x = torch.cat((x, next_token), dim=-1)
+            generated = torch.cat((generated, next_token), dim=-1)
+
+        new_token_ids = x[:,origin_seq_len:]
+        return generated[:,1:]
 

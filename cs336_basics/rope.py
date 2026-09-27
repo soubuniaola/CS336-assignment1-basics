@@ -1,11 +1,11 @@
-import einx
+
 import torch
 from einops import einsum
 from torch import nn
 
 
 class Rope(nn.Module):
-    def __init__(self, theta: float, max_seq_len: int, dim: int, device=None):
+    def __init__(self, theta: float, max_seq_len: int, dim: int):
         super().__init__()
 
         # position: (max_seq_len 1)
